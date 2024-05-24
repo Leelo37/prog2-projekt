@@ -1,1 +1,1 @@
-C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\projekt\projekt-primer\register\target\debug\register.exe: C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\projekt\projekt-primer\register\src\main.rs
+C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\prog2-projekt\projekt\register\target\debug\register.exe: C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\prog2-projekt\projekt\register\src\main.rs

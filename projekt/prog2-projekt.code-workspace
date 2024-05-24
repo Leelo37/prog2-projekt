@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "generator"
+		},
+		{
+			"path": "register"
+		}
+	],
+	"settings": {}
+}
