@@ -1,0 +1,1 @@
+C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\projekt\projekt-primer\generator\target\debug\generator.exe: C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\projekt\projekt-primer\generator\src\main.rs
