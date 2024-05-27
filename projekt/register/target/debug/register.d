@@ -1,1 +1,0 @@
-C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\prog2-projekt\projekt\register\target\debug\register.exe: C:\Users\levbe\Documents\Lev\Fakulteta\programiranje2\prog2-projekt\projekt\register\src\main.rs
