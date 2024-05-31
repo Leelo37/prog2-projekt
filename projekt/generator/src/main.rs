@@ -75,11 +75,43 @@ impl Arithmetic {
     }
 }
 
+pub struct Geometric {
+    start: f64,
+    factor: f64,
+}
+
+impl Geometric {
+    pub fn new(start: f64, factor: f64) -> Box<Geometric> {
+        Box::new(Geometric { start, factor })
+    }
+
+    pub fn k_th(&self, k: usize) -> f64 {
+        let mut a = f64::powf(self.factor, k as f64);
+        self.start * a
+    }
+
+    pub fn range(&self, range: Range) -> Vec<f64> {
+        let mut result = Vec::new();
+        let mut k = range.from;
+        while k <= range.to {
+            result.push(self.k_th(k as usize));
+            k += range.step;
+        }
+        result
+    }
+}
+
 fn sequences() -> Vec<SequenceInfo> {
     let mut sequences = Vec::new();
     sequences.push(SequenceInfo {
         name: "Arithmetic".to_string(),
         description: "Arithmetic sequence".to_string(),
+        parameters: 2,
+        sequences: 0,
+    });
+    sequences.push(SequenceInfo {
+        name: "Geometric".to_string(),
+        description: "Geometric sequence".to_string(),
         parameters: 2,
         sequences: 0,
     });
@@ -95,7 +127,7 @@ fn sequences() -> Vec<SequenceInfo> {
 fn get_project() -> Project {
     return Project {
         name: "Matija & Filip".to_string(),
-        ip: "0.0.0.0".to_string(),
+        ip: "127.0.0.1".to_string(),
         port: PORT,
     };
 }
@@ -178,6 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )))
                     }
                     (&Method::POST, r) => {
+                        println!("Got request {:?}", r);
                         let seqs = sequences();
                         let sequences = seqs
                             .iter()
@@ -190,6 +223,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let range = request.range;
                                 let seq =
                                     Arithmetic::new(request.parameters[0], request.parameters[1]);
+                                Ok(Response::new(full(
+                                    serde_json::to_string(&seq.range(range)).unwrap(),
+                                )))
+                            }
+                            Some(s) if *s.name == "Geometric".to_string() => {
+                                println!("Found geometric");
+                                let body = collect_body(req).await?;
+                                println!("Got body");
+                                let request: SequenceRequest = serde_json::from_str(&body).unwrap();
+                                let range = request.range;
+                                let seq =
+                                    Geometric::new(request.parameters[0], request.parameters[1]);
                                 Ok(Response::new(full(
                                     serde_json::to_string(&seq.range(range)).unwrap(),
                                 )))
