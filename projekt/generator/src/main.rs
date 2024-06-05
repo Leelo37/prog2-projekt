@@ -86,8 +86,32 @@ impl Geometric {
     }
 
     pub fn k_th(&self, k: usize) -> f64 {
-        let mut a = f64::powf(self.factor, k as f64);
+        let a = f64::powf(self.factor, k as f64);
         self.start * a
+    }
+
+    pub fn range(&self, range: Range) -> Vec<f64> {
+        let mut result = Vec::new();
+        let mut k = range.from;
+        while k <= range.to {
+            result.push(self.k_th(k as usize));
+            k += range.step;
+        }
+        result
+    }
+}
+
+pub struct Constant {
+    start: f64,
+}
+
+impl Constant {
+    pub fn new(start: f64) -> Box<Constant> {
+        Box::new(Constant { start })
+    }
+
+    pub fn k_th(&self, _k: usize) -> f64 {
+        self.start
     }
 
     pub fn range(&self, range: Range) -> Vec<f64> {
@@ -113,6 +137,12 @@ fn sequences() -> Vec<SequenceInfo> {
         name: "Geometric".to_string(),
         description: "Geometric sequence".to_string(),
         parameters: 2,
+        sequences: 0,
+    });
+    sequences.push(SequenceInfo {
+        name: "Constant".to_string(),
+        description: "Constant sequence".to_string(),
+        parameters: 1,
         sequences: 0,
     });
     sequences.push(SequenceInfo {
@@ -166,6 +196,30 @@ async fn send_get(url: String) -> Result<String, reqwest::Error> {
     return Ok(res);
 }
 
+async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &SequenceInfo) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let body = collect_body(req).await?;
+    let request: SequenceRequest = serde_json::from_str(&body).unwrap();
+    let range = request.range;
+
+    let sequence: Box<dyn Fn(Range) -> Vec<f64>> = match sequence_info.name.as_str() {
+        "Arithmetic" => {
+            let seq = Arithmetic::new(request.parameters[0], request.parameters[1]);
+            Box::new(move |r| seq.range(r))
+        }
+        "Geometric" => {
+            let seq = Geometric::new(request.parameters[0], request.parameters[1]);
+            Box::new(move |r| seq.range(r))
+        }
+        "Constant" => {
+            let seq = Constant::new(request.parameters[0]);
+            Box::new(move |r| seq.range(r))
+        }
+        _ => panic!("Not implemented"),
+    };
+
+    Ok(Response::new(full(serde_json::to_string(&sequence(range)).unwrap())))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = ([127, 0, 0, 1], PORT).into();
@@ -203,46 +257,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         serde_json::to_string(&get_project()).unwrap(),
                     ))),
                     (&Method::GET, "/sequence") => {
-                        //
                         let sequences = sequences();
                         Ok(Response::new(full(
                             serde_json::to_string(&sequences).unwrap(),
                         )))
                     }
                     (&Method::POST, r) => {
-                        println!("Got request {:?}", r);
                         let seqs = sequences();
-                        let sequences = seqs
+                        if let Some(sequence_info) = seqs
                             .iter()
-                            .find(|&x| ("/sequence/".to_string() + &x.name) == r);
-                        match sequences {
-                            None => create_404(),
-                            Some(s) if *s.name == "Arithmetic".to_string() => {
-                                let body = collect_body(req).await?;
-                                let request: SequenceRequest = serde_json::from_str(&body).unwrap();
-                                let range = request.range;
-                                let seq =
-                                    Arithmetic::new(request.parameters[0], request.parameters[1]);
-                                Ok(Response::new(full(
-                                    serde_json::to_string(&seq.range(range)).unwrap(),
-                                )))
-                            }
-                            Some(s) if *s.name == "Geometric".to_string() => {
-                                println!("Found geometric");
-                                let body = collect_body(req).await?;
-                                println!("Got body");
-                                let request: SequenceRequest = serde_json::from_str(&body).unwrap();
-                                let range = request.range;
-                                let seq =
-                                    Geometric::new(request.parameters[0], request.parameters[1]);
-                                Ok(Response::new(full(
-                                    serde_json::to_string(&seq.range(range)).unwrap(),
-                                )))
-                            }
-                            _ => panic!("Not implemented"),
+                            .find(|&x| ("/sequence/".to_string() + &x.name) == r)
+                        {
+                            handle_sequence_request(req, sequence_info).await
+                        } else {
+                            create_404()
                         }
                     }
-
                     _ => create_404(),
                 }
             }
