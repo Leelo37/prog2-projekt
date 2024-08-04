@@ -184,6 +184,102 @@ impl Sequence for LinComb {
     }
 }
 
+pub struct Recursive {
+    x0: f64,
+    x1: f64,
+    a: f64,
+    b: f64
+}
+
+impl Recursive {
+    pub fn new(x0: f64, x1: f64, a: f64, b: f64) -> Box<Recursive> {
+        Box::new(Recursive { x0, x1, a, b })
+    }
+}
+
+impl Sequence for Recursive {
+    fn k_th(&self, k: usize) -> f64 {
+        if k == 0 {
+            self.x0
+        } else if k == 1 {
+            self.x1
+        } else {
+            self.a * self.k_th(k-2) + self.b * self.k_th(k-1)
+        }
+    }
+}
+
+pub struct Average {
+    seq1: Box<dyn Sequence>,
+    seq2: Box<dyn Sequence>
+}
+
+impl Average {
+    pub fn new(seq1: Box<dyn Sequence>, seq2: Box<dyn Sequence>) -> Box<Average> {
+        Box::new(Average { seq1, seq2 })
+    }
+}
+
+impl Sequence for Average {
+    fn k_th(&self, k: usize) -> f64 {
+        (self.seq1.k_th(k) + self.seq2.k_th(k)) / 2.0
+    }
+}
+
+pub struct Cyclic {
+    seq: Box<dyn Sequence>,
+    cycle_length: usize
+}
+
+impl Cyclic {
+    pub fn new(seq: Box<dyn Sequence>, cycle_length: usize) -> Box<Cyclic> {
+        Box::new(Cyclic { seq, cycle_length })
+    }
+}
+
+impl Sequence for Cyclic {
+    fn k_th(&self, k: usize) -> f64 {
+        self.seq.k_th(k % self.cycle_length)
+    }
+}
+
+pub struct Step {
+    seq: Box<dyn Sequence>,
+    step: usize
+}
+
+impl Step {
+    pub fn new(seq: Box<dyn Sequence>, step: usize) -> Box<Step> {
+        Box::new(Step { seq, step})
+    }
+}
+
+impl Sequence for Step {
+    fn k_th(&self, k: usize) -> f64 {
+        self.seq.k_th(k * self.step)
+    }
+}
+
+pub struct Smoothed {
+    seq: Box<dyn Sequence>
+}
+
+impl Smoothed {
+    pub fn new(seq: Box<dyn Sequence>) -> Box<Smoothed> {
+        Box::new(Smoothed { seq })
+    }
+}
+
+impl Sequence for Smoothed {
+    fn k_th(&self, k: usize) -> f64 {
+        if k == 0 {
+            (self.seq.k_th(k) + self.seq.k_th(k+1)) / 2.0
+        } else {
+            (self.seq.k_th(k-1) + self.seq.k_th(k) + self.seq.k_th(k+1)) / 3.0
+        }
+    }
+}
+
 fn sequences() -> Vec<SequenceInfo> {
     let mut sequences = Vec::new();
     sequences.push(SequenceInfo {
@@ -227,6 +323,36 @@ fn sequences() -> Vec<SequenceInfo> {
         description: "Linear combination of two sequences".to_string(),
         parameters: 3,
         sequences: 2,
+    });
+    sequences.push(SequenceInfo {
+        name: "Recursive".to_string(),
+        description: "Recursive sequence of the form x(n) = ax(n-1) + bx(n-2)".to_string(),
+        parameters: 4,
+        sequences: 0,
+    });
+    sequences.push(SequenceInfo {
+        name: "Average".to_string(),
+        description: "Element-wise average of two given sequences".to_string(),
+        parameters: 0,
+        sequences: 2,
+    });
+    sequences.push(SequenceInfo {
+        name: "Cyclic".to_string(),
+        description: "Sequence that cycles over a specified number of starting terms of another sequence".to_string(),
+        parameters: 1,
+        sequences: 1,
+    });
+    sequences.push(SequenceInfo {
+        name: "Step".to_string(),
+        description: "Sequence that takes every nth element of a given sequence".to_string(),
+        parameters: 1,
+        sequences: 1,
+    });
+    sequences.push(SequenceInfo {
+        name: "Smoothed".to_string(),
+        description: "Sequence where each element is the average of itself and its immediate neighbors".to_string(),
+        parameters: 0,
+        sequences: 1,
     });
     sequences
 }
@@ -301,6 +427,24 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
             let seq2 = create_sequence_from_syntax(&request.sequences[1]);
             LinComb::new(request.parameters[0], request.parameters[1], request.parameters[2], seq1, seq2)
         }
+        "Recursive" => Recursive::new(request.parameters[0], request.parameters[1], request.parameters[2], request.parameters[3]),
+        "Average" => {
+            let seq1 = create_sequence_from_syntax(&request.sequences[0]);
+            let seq2 = create_sequence_from_syntax(&request.sequences[1]);
+            Average::new(seq1, seq2)
+        }
+        "Cyclic" => {
+            let seq = create_sequence_from_syntax(&request.sequences[0]);
+            Cyclic::new(seq, request.parameters[0] as usize)
+        }
+        "Step" => {
+            let seq = create_sequence_from_syntax(&request.sequences[0]);
+            Step::new(seq, request.parameters[0] as usize)
+        }
+        "Smoothed" => {
+            let seq = create_sequence_from_syntax(&request.sequences[0]);
+            Smoothed::new(seq)
+        }
         _ => panic!("Sequence not implemented")
     };
 
@@ -330,6 +474,24 @@ fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
             let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
             let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
             LinComb::new(syntax.parameters[0], syntax.parameters[1], syntax.parameters[2], seq1, seq2)
+        }
+        "Recursive" => Recursive::new(syntax.parameters[0], syntax.parameters[1], syntax.parameters[2], syntax.parameters[3]),
+        "Average" => {
+            let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
+            let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
+            Average::new(seq1, seq2)
+        }
+        "Cyclic" => {
+            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
+            Cyclic::new(seq, syntax.parameters[0] as usize)
+        }
+        "Step" => {
+            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
+            Step::new(seq, syntax.parameters[0] as usize)
+        }
+        "Smoothed" => {
+            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
+            Smoothed::new(seq)
         }
         _ => panic!("Unsupported sequence")
     }
