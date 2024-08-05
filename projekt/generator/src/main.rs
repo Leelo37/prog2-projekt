@@ -243,20 +243,19 @@ impl Sequence for Cyclic {
     }
 }
 
-pub struct Step {
-    seq: Box<dyn Sequence>,
-    step: usize
+pub struct Alternating {
+    seq: Box<dyn Sequence>
 }
 
-impl Step {
-    pub fn new(seq: Box<dyn Sequence>, step: usize) -> Box<Step> {
-        Box::new(Step { seq, step})
+impl Alternating {
+    pub fn new(seq: Box<dyn Sequence>) -> Box<Alternating> {
+        Box::new(Alternating { seq })
     }
 }
 
-impl Sequence for Step {
+impl Sequence for Alternating {
     fn k_th(&self, k: usize) -> f64 {
-        self.seq.k_th(k * self.step)
+        (-1.0f64).powi(k.try_into().unwrap()) * self.seq.k_th(k)
     }
 }
 
@@ -343,9 +342,9 @@ fn sequences() -> Vec<SequenceInfo> {
         sequences: 1,
     });
     sequences.push(SequenceInfo {
-        name: "Step".to_string(),
-        description: "Sequence that takes every nth element of a given sequence".to_string(),
-        parameters: 1,
+        name: "Alternating".to_string(),
+        description: "Sequence where the sign of each element alternates based on its index.".to_string(),
+        parameters: 0,
         sequences: 1,
     });
     sequences.push(SequenceInfo {
@@ -437,9 +436,9 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
             let seq = create_sequence_from_syntax(&request.sequences[0]);
             Cyclic::new(seq, request.parameters[0] as usize)
         }
-        "Step" => {
+        "Alternating" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Step::new(seq, request.parameters[0] as usize)
+            Alternating::new(seq)
         }
         "Smoothed" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
@@ -485,9 +484,9 @@ fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
             let seq = create_sequence_from_syntax(&syntax.sequences[0]);
             Cyclic::new(seq, syntax.parameters[0] as usize)
         }
-        "Step" => {
+        "Alternating" => {
             let seq = create_sequence_from_syntax(&syntax.sequences[0]);
-            Step::new(seq, syntax.parameters[0] as usize)
+            Alternating::new(seq)
         }
         "Smoothed" => {
             let seq = create_sequence_from_syntax(&syntax.sequences[0]);
