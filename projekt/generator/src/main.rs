@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use core::convert::Infallible;
 
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -51,7 +50,7 @@ pub struct SequenceInfo {
     sequences: u32,
 }
 
-pub trait Sequence {
+pub trait Sequence: Send + Sync {
     fn k_th(&self, k: usize) -> f64;
     fn range(&self, range: Range) -> Vec<f64> {
         let mut result = Vec::new();
@@ -199,7 +198,7 @@ impl Recursive {
 }
 
 impl Sequence for Recursive {
-    fn kth(&self, k: usize) -> f64 {
+    fn k_th(&self, k: usize) -> f64 {
         if k == 0 {
             return self.x0;
         }
@@ -209,7 +208,7 @@ impl Sequence for Recursive {
         let mut prev1 = self.x1;
         let mut prev2 = self.x0;
         let mut current = 0.0;
-        for  in 2..=k {
+        for _ in 2..=k {
             current = self.a * prev2 + self.b * prev1;
             prev2 = prev1;
             prev1 = current;
@@ -409,9 +408,9 @@ async fn send_get(url: String) -> Result<String, reqwest::Error> {
 
 async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &SequenceInfo) -> Result<Response<BoxBody<Bytes, Error>>, hyper::Error> {
     let body = collect_body(req).await?;
-    let body2 = body.clone();
+    println!("{:?}", body);
     let request: SequenceRequest = serde_json::from_str(&body).unwrap();
-    let request1: SequenceRequest = serde_json::from_str(&body2).unwrap();
+    let request1: SequenceRequest = serde_json::from_str(&body).unwrap();
     let range = request.range;
 
     let sequence: Option<Box<dyn Sequence>> = match sequence_info.name.as_str() {
@@ -459,21 +458,27 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
         _ => None,
     };
 
-    return match sequence {
+    match sequence {
         Some(seq) => {
-            println!("{:?}", Response::new(full(serde_json::to_string(&seq.range(request1.range)).unwrap())));
-            Ok(Response::new(full(serde_json::to_string(&seq.range(range)).unwrap())))
-            // let mut builder = Response::builder()
-            // .status(200)
-            // .body(BoxBody::new(serde_json::to_string(&seq.range(request1.range)).unwrap()));
-            // builder
+            let result = serde_json::to_string(&seq.range(range)).unwrap();
+            println!("{}", &result);
+            Ok(Response::new(full(result)))
         },
         None => {
-            let mut builder = Response::builder()
-            .status(200)
-            .body(BoxBody::new(delegate(request1, &sequence_info.name).await.unwrap()));
-            builder
-        }};
+            let result = match delegate(request1, &sequence_info.name).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    eprintln!("Failed to delegate request: {}", e);
+                    return Ok(Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(empty())
+                        .unwrap());
+                }
+            };
+            println!("{:?}", result.clone());
+            Ok(Response::new(full(result)))
+        },
+    }
 }
 
 fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
@@ -539,8 +544,7 @@ async fn delegate(request: SequenceRequest, sequence_name: &str) -> Result<Strin
     if length > 0 {
         for i in 0..length {
             let ip = &projects[i]["ip"].to_string().replace("\"", "");
-            // let port = &values[i]["port"];
-            let port = 9000;
+            let port = &projects[i]["port"];
             println!("ip:port = {}:{}", &ip, &port);
 
             if ip != "127.0.0.1" || port != PORT {
@@ -549,27 +553,27 @@ async fn delegate(request: SequenceRequest, sequence_name: &str) -> Result<Strin
                     Ok(resp) => resp,
                     Err(e) => panic!("{}", e),
                 };
-                println!("{:?}", data);
 
                 let seqs: serde_json::Value = serde_json::from_str(&data).unwrap();
                 for i in 0..seqs.as_array().unwrap().len() {
-                    if seqs[i]["name"] == sequence_name {
-                        let url_of_seq = format!("{}/{}", &url, sequence_name);
+                    if format!("/sequence/{}", seqs[i]["name"].to_string().replace("\"", "")) == sequence_name {
+                        let url_of_seq = format!("{}/{}", &url, seqs[i]["name"].to_string().replace("\"", ""));
                         return match send_post(url_of_seq, body).await {
                             Ok(resp) => Ok(resp),
-                            Err(e) => panic!("{}", e),
+                            Err(e) => {
+                                eprintln!("{}", e);
+                                Ok("[]".to_string())
+                            },
                         };
-                        // return match serde_json::from_str(&wanted_seq) {
-                        //     Ok(json) => json,
-                        //     Err(e) => panic!("{}", e),
-                        // };
                     };
                 }
             }
         }
-        panic!("Nobody has this sequence")
+        eprintln!("Nobody has this {}", sequence_name);
+        Ok("[]".to_string())
     } else {
-        panic!("Nobody has this sequence")
+        eprintln!("Nobody has this {}", sequence_name);
+        Ok("[]".to_string())
     }
 }
 
@@ -623,7 +627,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             {
                                 handle_sequence_request(req, sequence_info).await
                             } else {
-                                create_404()
+                                let sequence_info = SequenceInfo {
+                                    name: r.to_string(),
+                                    description: "".to_string(),
+                                    parameters: 0,
+                                    sequences: 0,
+                                };
+                                handle_sequence_request(req, &sequence_info).await
                             }
                         }
                         _ => create_404(),
