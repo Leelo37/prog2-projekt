@@ -7,6 +7,7 @@ for j in projects:
         print(url)
         seqs = requests.get(url).json()
         assert "Arithmetic" in [j["name"] for j in seqs]
+<<<<<<< HEAD
         k = 0.9
         z = 1
         # for j in range(2):
@@ -24,6 +25,11 @@ for j in projects:
         #     # print(r)
         #     print(r.json())
         for i in range(10):
+=======
+        k = 10
+        z = 0
+        for j in range(100):
+>>>>>>> b45b57a47e504cf11a2fbe746ec7342a0c7e144a
             body = {
                 "range": {
                     "from": i * 100,
@@ -33,7 +39,12 @@ for j in projects:
                 "parameters": [],
                 "sequences": [{"name": "Geometric", "parameters": [z, k], "sequences": []}]
             }
+<<<<<<< HEAD
             r = requests.post(url + "/Smoothed", json=body)
+=======
+            r = requests.post(url + "/Arithmetic", json=body)
+            # print(r)
+>>>>>>> b45b57a47e504cf11a2fbe746ec7342a0c7e144a
             print(r.json())
         break
 else:
