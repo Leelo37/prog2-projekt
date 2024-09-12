@@ -48,7 +48,7 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr: SocketAddr = ([0, 0, 0, 0], 7878).into();
+    let addr: SocketAddr = ([127, 0, 0, 1], 7878).into();
 
     // For the most basic of state, we just share a counter, that increments
     // with each request, and we send its value back in the response.
@@ -56,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on http://{}", addr);
     let db: Db = Arc::new(Mutex::new(HashMap::new()));
+    println!("Db je {:?}", db);
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -69,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match (req.method(), req.uri().path()) {
                     (&Method::GET, "/project") => {
                         let db = db.lock().unwrap();
+                        println!("db je {:?}", db);
                         let values = db.values().collect::<Vec<_>>();
                         let value = serde_json::to_string(&values).unwrap();
                         println!("Returning: {:?}", value);

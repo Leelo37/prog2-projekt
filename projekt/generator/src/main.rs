@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use core::convert::Infallible;
 
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -198,14 +199,22 @@ impl Recursive {
 }
 
 impl Sequence for Recursive {
-    fn k_th(&self, k: usize) -> f64 {
+    fn kth(&self, k: usize) -> f64 {
         if k == 0 {
-            self.x0
-        } else if k == 1 {
-            self.x1
-        } else {
-            self.a * self.k_th(k-2) + self.b * self.k_th(k-1)
+            return self.x0;
         }
+        else if k == 1 {
+            return self.x1;
+        }
+        let mut prev1 = self.x1;
+        let mut prev2 = self.x0;
+        let mut current = 0.0;
+        for  in 2..=k {
+            current = self.a * prev2 + self.b * prev1;
+            prev2 = prev1;
+            prev1 = current;
+        }
+        current
     }
 }
 
@@ -359,7 +368,7 @@ fn sequences() -> Vec<SequenceInfo> {
 
 fn get_project() -> Project {
     return Project {
-        name: "Matija & Filip".to_string(),
+        name: "Lucija & Lev".to_string(),
         ip: "127.0.0.1".to_string(),
         port: PORT,
     };
@@ -401,54 +410,73 @@ async fn send_get(url: String) -> Result<String, reqwest::Error> {
 
 async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &SequenceInfo) -> Result<Response<BoxBody<Bytes, Error>>, hyper::Error> {
     let body = collect_body(req).await?;
+    let body2 = body.clone();
     let request: SequenceRequest = serde_json::from_str(&body).unwrap();
+    let request1: SequenceRequest = serde_json::from_str(&body2).unwrap();
     let range = request.range;
 
-    let sequence: Box<dyn Sequence> = match sequence_info.name.as_str() {
-        "Arithmetic" => Arithmetic::new(request.parameters[0], request.parameters[1]),
-        "Geometric" => Geometric::new(request.parameters[0], request.parameters[1]),
-        "Constant" => Constant::new(request.parameters[0]),
+    let sequence: Option<Box<dyn Sequence>> = match sequence_info.name.as_str() {
+        "Arithmetic" => Some(Arithmetic::new(request.parameters[0], request.parameters[1])),
+        "Geometric" => Some(Geometric::new(request.parameters[0], request.parameters[1])),
+        "Constant" => Some(Constant::new(request.parameters[0])),
         "Sum" => {
             let seq1 = create_sequence_from_syntax(&request.sequences[0]);
             let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Sum::new(seq1, seq2)
+            Some(Sum::new(seq1, seq2))
         }
         "Prod" => {
             let seq1 = create_sequence_from_syntax(&request.sequences[0]);
             let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Prod::new(seq1, seq2)
+            Some(Prod::new(seq1, seq2))
         }
         "Drop" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Drop::new(seq, request.parameters[0] as usize)
+            Some(Drop::new(seq, request.parameters[0] as usize))
         }
         "LinComb" => {
             let seq1 = create_sequence_from_syntax(&request.sequences[0]);
             let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            LinComb::new(request.parameters[0], request.parameters[1], request.parameters[2], seq1, seq2)
+            Some(LinComb::new(request.parameters[0], request.parameters[1], request.parameters[2], seq1, seq2))
         }
-        "Recursive" => Recursive::new(request.parameters[0], request.parameters[1], request.parameters[2], request.parameters[3]),
+        "Recursive" => Some(Recursive::new(
+            request.parameters[0], request.parameters[1], request.parameters[2], request.parameters[3])),
         "Average" => {
             let seq1 = create_sequence_from_syntax(&request.sequences[0]);
             let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Average::new(seq1, seq2)
+            Some(Average::new(seq1, seq2))
         }
         "Cyclic" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Cyclic::new(seq, request.parameters[0] as usize)
+            Some(Cyclic::new(seq, request.parameters[0] as usize))
         }
         "Step" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Step::new(seq, request.parameters[0] as usize)
+            Some(Step::new(seq, request.parameters[0] as usize))
         }
         "Smoothed" => {
             let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Smoothed::new(seq)
+            Some(Smoothed::new(seq))
         }
-        _ => panic!("Sequence not implemented")
+        _ => None,
     };
 
-    Ok(Response::new(full(serde_json::to_string(&sequence.range(range)).unwrap())))
+    return match sequence {
+        Some(seq) => {
+            println!("{:?}", Response::new(full(serde_json::to_string(&seq.range(request1.range)).unwrap())));
+            Ok(Response::new(full(serde_json::to_string(&seq.range(range)).unwrap())))
+            // let mut builder = Response::builder()
+            // .status(200)
+            // .body(BoxBody::new(serde_json::to_string(&seq.range(request1.range)).unwrap()));
+            // builder
+        },
+        None => {
+            let mut builder = Response::builder()
+            .status(200)
+            .body(BoxBody::new(delegate(request1, &sequence_info.name).await.unwrap()));
+            builder
+        }
+            // panic!("o ne")//Ok(Response::new(full(delegate(request1, &sequence_info.name).await.unwrap()))),
+    };
 }
 
 fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
@@ -497,22 +525,72 @@ fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
     }
 }
 
+async fn delegate(request: SequenceRequest, sequence_name: &str) -> Result<String, hyper::Error> {
+    
+    let b = match send_get("http://127.0.0.1:7878/project".to_string()).await {
+        Ok(resp) => resp,
+        Err(e) => panic!("{}", e),
+    };
+    let projects: serde_json::Value = serde_json::from_str(&b).unwrap();
+    let length = projects.as_array().unwrap().len();
+
+    let body = match serde_json::to_string(&request) {
+        Ok(req) => req,
+        Err(e) => panic!("{}", e),
+    };
+
+    if length > 0 {
+        for i in 0..length {
+            let ip = &projects[i]["ip"].to_string().replace("\"", "");
+            // let port = &values[i]["port"];
+            let port = 9000;
+            println!("ip:port = {}:{}", &ip, &port);
+
+            if ip != "127.0.0.1" || port != PORT {
+                let url = format!("http://{}:{}/sequence", ip, port);
+                let data = match send_get(url.clone()).await {
+                    Ok(resp) => resp,
+                    Err(e) => panic!("{}", e),
+                };
+                println!("{:?}", data);
+
+                let seqs: serde_json::Value = serde_json::from_str(&data).unwrap();
+                for i in 0..seqs.as_array().unwrap().len() {
+                    if seqs[i]["name"] == sequence_name {
+                        let url_of_seq = format!("{}/{}", &url, sequence_name);
+                        return match send_post(url_of_seq, body).await {
+                            Ok(resp) => Ok(resp),
+                            Err(e) => panic!("{}", e),
+                        };
+                        // return match serde_json::from_str(&wanted_seq) {
+                        //     Ok(json) => json,
+                        //     Err(e) => panic!("{}", e),
+                        // };
+                    };
+                }
+            }
+        }
+        panic!("Nobody has this sequence")
+    } else {
+        panic!("Nobody has this sequence")
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = ([127, 0, 0, 1], PORT).into();
 
     let b = send_get("http://127.0.0.1:7878/project".to_string()).await?;
-    println!("HERE {}", b);
+    println!("HERE GET {}", b);
 
     let b = send_post(
         "http://127.0.0.1:7878/project".to_string(),
         serde_json::to_string(&get_project()).unwrap(),
-    )
-    .await?;
-    println!("HERE {}", b);
+    ).await?;    
+    println!("HERE POST {}", b);
 
-    let b = send_get("http://127.0.0.1:7878".to_string()).await?;
-    println!("HERE {}", b);
+    let b = send_get("http://127.0.0.1:7878/project".to_string()).await?;
+    println!("HERE GET {}", b);
 
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on http://{}", addr);
@@ -527,36 +605,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (stream, _) = listener.accept().await?;
         let io = TokioIo::new(stream);
 
-        let service = service_fn(move |req| {
-            async move {
-                match (req.method(), req.uri().path()) {
-                    (&Method::GET, "/ping") => Ok::<_, Error>(Response::new(full(
-                        serde_json::to_string(&get_project()).unwrap(),
-                    ))),
-                    (&Method::GET, "/sequence") => {
-                        let sequences = sequences();
-                        Ok(Response::new(full(
-                            serde_json::to_string(&sequences).unwrap(),
+        tokio::task::spawn(async move {
+            let service = service_fn(move |req| {
+                async move {
+                    match (req.method(), req.uri().path()) {
+                        (&Method::GET, "/ping") => Ok::<_, Error>(Response::new(full(
+                            serde_json::to_string(&get_project()).unwrap(),
+                        ))),
+                        (&Method::GET, "/sequence") => {
+                            let sequences = sequences();
+                            let data = serde_json::to_string(&sequences).unwrap();
+                            Ok(Response::new(full(data,
                         )))
-                    }
-                    (&Method::POST, r) => {
-                        let seqs = sequences();
-                        if let Some(sequence_info) = seqs
-                            .iter()
-                            .find(|&x| ("/sequence/".to_string() + &x.name) == r)
-                        {
-                            handle_sequence_request(req, sequence_info).await
-                        } else {
-                            create_404()
                         }
+                        (&Method::POST, r) => {
+                            let seqs = sequences();
+                            if let Some(sequence_info) = seqs
+                                .iter()
+                                .find(|&x| ("/sequence/".to_string() + &x.name) == r)
+                            {
+                                handle_sequence_request(req, sequence_info).await
+                            } else {
+                                create_404()
+                            }
+                        }
+                        _ => create_404(),
                     }
-                    _ => create_404(),
                 }
-            }
         });
 
         if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
             println!("Error serving connection: {:?}", err);
         }
+    });  
     }
 }
