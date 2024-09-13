@@ -19,7 +19,7 @@ for j in projects:
                  "sequences": [
                 ],
             }
-            r = requests.post(url + "/Arithmetc", json=body)
+            r = requests.post(url + "/Arithmetic", json=body)
             print(r.json())
         for i in range(3):
             body = {

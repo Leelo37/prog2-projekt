@@ -420,7 +420,7 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
 
     for seq in request.sequences.iter() {
         let seq_name = seq.name.clone();
-        if seqs.iter().find(|&x| ("/sequence/".to_string() + &x.name) == seq_name).is_some() {
+        if seqs.iter().find(|&x| x.name == seq_name).is_some() {
                 name_of_seq = &sequence_info.name;
             }
         else {
