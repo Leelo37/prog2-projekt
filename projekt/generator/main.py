@@ -11,8 +11,8 @@ for j in projects:
         for j in range(2):
             body = {
                 "range": {
-                    "from": j * 100,
-                    "to": (j + 1) * 100,
+                    "from": j * 10,
+                    "to": (j + 1) * 10,
                     "step": 1,
                 },
                 "parameters": [z, k],
@@ -21,11 +21,11 @@ for j in projects:
             }
             r = requests.post(url + "/Arithmetic", json=body)
             print(r.json())
-        for i in range(3):
+        for i in range(2):
             body = {
                 "range": {
-                    "from": i * 100,
-                    "to": (i + 1) * 100,
+                    "from": i * 10,
+                    "to": (i + 1) * 10,
                     "step": 1,
                 },
                 "parameters": [],

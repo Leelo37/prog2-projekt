@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+use strum_macros::EnumString;
+use std::str::FromStr;
 
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -14,7 +16,7 @@ use tokio::net::TcpListener;
 
 use serde::{Deserialize, Serialize};
 
-const PORT: u16 = 12345;
+const PORT: u16 = 12346;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Project {
@@ -50,6 +52,22 @@ pub struct SequenceInfo {
     description: String,
     parameters: u32,
     sequences: u32,
+}
+
+#[derive(EnumString)]
+enum SequenceWithOneSub {
+    Drop,
+    Cyclic,
+    Alternating,
+    Smoothed,
+}
+
+#[derive(EnumString)]
+enum SequenceWithTwoSubs {
+    Sum,
+    Prod,
+    LinComb,
+    Average,
 }
 
 pub trait Sequence: Send + Sync {
@@ -416,7 +434,7 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
     let range = request.range;
 
     let seqs = sequences();
-    let mut name_of_seq = "";
+    let mut name_of_seq: &str = &sequence_info.name;
 
     for seq in request.sequences.iter() {
         let seq_name = seq.name.clone();
@@ -430,46 +448,26 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
     }
 
     let sequence: Option<Box<dyn Sequence>> = match name_of_seq {
-        "Arithmetic" => Some(Arithmetic::new(request.parameters[0], request.parameters[1])),
-        "Geometric" => Some(Geometric::new(request.parameters[0], request.parameters[1])),
-        "Constant" => Some(Constant::new(request.parameters[0])),
-        "Sum" => {
-            let seq1 = create_sequence_from_syntax(&request.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Some(Sum::new(seq1, seq2))
+        without_seq if ["Arithmetic", "Geometric", "Constant", "Recursive"].contains(&without_seq)
+            => Some(create_sequence_from_syntax(&name_of_seq, &request.parameters)),
+        with_one if ["Drop", "Cyclic", "Alternating", "Smoothed"].contains(&with_one) => {
+            let seq = create_sequence_from_syntax(&request.sequences[0].name, &request.sequences[0].parameters);
+            match SequenceWithOneSub::from_str(with_one).unwrap() {
+                SequenceWithOneSub::Drop => Some(Drop::new(seq, request.parameters[0] as usize)),
+                SequenceWithOneSub::Cyclic => Some(Cyclic::new(seq, request.parameters[0] as usize)),
+                SequenceWithOneSub::Alternating => Some(Alternating::new(seq)),
+                SequenceWithOneSub::Smoothed => Some(Smoothed::new(seq)),
+            }
         }
-        "Prod" => {
-            let seq1 = create_sequence_from_syntax(&request.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Some(Prod::new(seq1, seq2))
-        }
-        "Drop" => {
-            let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Some(Drop::new(seq, request.parameters[0] as usize))
-        }
-        "LinComb" => {
-            let seq1 = create_sequence_from_syntax(&request.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Some(LinComb::new(request.parameters[0], request.parameters[1], request.parameters[2], seq1, seq2))
-        }
-        "Recursive" => Some(Recursive::new(
-            request.parameters[0], request.parameters[1], request.parameters[2], request.parameters[3])),
-        "Average" => {
-            let seq1 = create_sequence_from_syntax(&request.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&request.sequences[1]);
-            Some(Average::new(seq1, seq2))
-        }
-        "Cyclic" => {
-            let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Some(Cyclic::new(seq, request.parameters[0] as usize))
-        }
-        "Alternating" => {
-            let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Some(Alternating::new(seq))
-        }
-        "Smoothed" => {
-            let seq = create_sequence_from_syntax(&request.sequences[0]);
-            Some(Smoothed::new(seq))
+        with_two if ["Sum", "Prod", "LinComb", "Average"].contains(&with_two) => {
+            let seq1 = create_sequence_from_syntax(&request.sequences[0].name, &request.sequences[0].parameters);
+            let seq2 = create_sequence_from_syntax(&request.sequences[1].name, &request.sequences[1].parameters);
+            match SequenceWithTwoSubs::from_str(with_two).unwrap() {
+                SequenceWithTwoSubs::Sum => Some(Sum::new(seq1, seq2)),
+                SequenceWithTwoSubs::Prod => Some(Prod::new(seq1, seq2)),
+                SequenceWithTwoSubs::LinComb => Some(LinComb::new(request.parameters[0], request.parameters[1], request.parameters[2], seq1, seq2)),
+                SequenceWithTwoSubs::Average => Some(Average::new(seq1, seq2))
+            }
         }
         _ => None,
     };
@@ -497,48 +495,12 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
     }
 }
 
-fn create_sequence_from_syntax(syntax: &SequenceSyntax) -> Box<dyn Sequence> {
-    match syntax.name.as_str() {
-        "Arithmetic" => Arithmetic::new(syntax.parameters[0], syntax.parameters[1]),
-        "Geometric" => Geometric::new(syntax.parameters[0], syntax.parameters[1]),
-        "Constant" => Constant::new(syntax.parameters[0]),
-        "Sum" => {
-            let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
-            Sum::new(seq1, seq2)
-        }
-        "Prod" => {
-            let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
-            Prod::new(seq1, seq2)
-        }
-        "Drop" => {
-            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
-            Drop::new(seq, syntax.parameters[0] as usize)
-        }
-        "LinComb" => {
-            let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
-            LinComb::new(syntax.parameters[0], syntax.parameters[1], syntax.parameters[2], seq1, seq2)
-        }
-        "Recursive" => Recursive::new(syntax.parameters[0], syntax.parameters[1], syntax.parameters[2], syntax.parameters[3]),
-        "Average" => {
-            let seq1 = create_sequence_from_syntax(&syntax.sequences[0]);
-            let seq2 = create_sequence_from_syntax(&syntax.sequences[1]);
-            Average::new(seq1, seq2)
-        }
-        "Cyclic" => {
-            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
-            Cyclic::new(seq, syntax.parameters[0] as usize)
-        }
-        "Alternating" => {
-            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
-            Alternating::new(seq)
-        }
-        "Smoothed" => {
-            let seq = create_sequence_from_syntax(&syntax.sequences[0]);
-            Smoothed::new(seq)
-        }
+fn create_sequence_from_syntax(name: &str, parameters: &Vec<f64>) -> Box<dyn Sequence> {
+    match name {
+        "Arithmetic" => Arithmetic::new(parameters[0], parameters[1]),
+        "Geometric" => Geometric::new(parameters[0], parameters[1]),
+        "Constant" => Constant::new(parameters[0]),
+        "Recursive" => Recursive::new(parameters[0], parameters[1], parameters[2], parameters[3]),
         _ => panic!("Unsupported sequence")
     }
 }
