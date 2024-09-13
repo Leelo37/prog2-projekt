@@ -29,7 +29,7 @@ for j in projects:
                     "step": 1,
                 },
                 "parameters": [],
-                "sequences": [{"name": "Geometric", "parameters": [z, k], "sequences": []}]
+                "sequences": [{"name": "Arithmetic", "parameters": [z, k], "sequences": []}]
             }
             r = requests.post(url + "/Smoothed", json=body)
             print(r.json())

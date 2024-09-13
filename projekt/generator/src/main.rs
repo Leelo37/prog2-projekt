@@ -1,4 +1,6 @@
 use std::net::SocketAddr;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -413,7 +415,21 @@ async fn handle_sequence_request(req: Request<Incoming>, sequence_info: &Sequenc
     let request1: SequenceRequest = serde_json::from_str(&body).unwrap();
     let range = request.range;
 
-    let sequence: Option<Box<dyn Sequence>> = match sequence_info.name.as_str() {
+    let seqs = sequences();
+    let mut name_of_seq = "";
+
+    for seq in request.sequences.iter() {
+        let seq_name = seq.name.clone();
+        if seqs.iter().find(|&x| ("/sequence/".to_string() + &x.name) == seq_name).is_some() {
+                name_of_seq = &sequence_info.name;
+            }
+        else {
+            name_of_seq = "";
+            break;
+        }
+    }
+
+    let sequence: Option<Box<dyn Sequence>> = match name_of_seq {
         "Arithmetic" => Some(Arithmetic::new(request.parameters[0], request.parameters[1])),
         "Geometric" => Some(Geometric::new(request.parameters[0], request.parameters[1])),
         "Constant" => Some(Constant::new(request.parameters[0])),
@@ -542,7 +558,10 @@ async fn delegate(request: SequenceRequest, sequence_name: &str) -> Result<Strin
     };
 
     if length > 0 {
-        for i in 0..length {
+        let mut vec: Vec<usize> = (0..length).collect();
+        vec.shuffle(&mut thread_rng());
+
+        for i in vec.iter() {
             let ip = &projects[i]["ip"].to_string().replace("\"", "");
             let port = &projects[i]["port"];
             println!("ip:port = {}:{}", &ip, &port);
@@ -569,10 +588,10 @@ async fn delegate(request: SequenceRequest, sequence_name: &str) -> Result<Strin
                 }
             }
         }
-        eprintln!("Nobody has this {}", sequence_name);
+        eprintln!("Nobody has {}", sequence_name);
         Ok("[]".to_string())
     } else {
-        eprintln!("Nobody has this {}", sequence_name);
+        eprintln!("Nobody has {}", sequence_name);
         Ok("[]".to_string())
     }
 }

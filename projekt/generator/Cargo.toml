@@ -16,3 +16,4 @@ http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 reqwest = "0.12.4"
 hyper-tls = "0.6.0"
+rand = "0.8"
