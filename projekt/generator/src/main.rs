@@ -71,7 +71,9 @@ enum SequenceWithTwoSubs {
 }
 
 pub trait Sequence: Send + Sync {
-    fn k_th(&self, k: usize) -> f64;
+    fn k_th(&self, k: usize) -> f64 {
+        self.range(Range {from: k as u64, to: k as u64, step: 1})[0]
+    }
     fn range(&self, range: Range) -> Vec<f64> {
         let mut result = Vec::new();
         let mut k = range.from;
@@ -218,22 +220,28 @@ impl Recursive {
 }
 
 impl Sequence for Recursive {
-    fn k_th(&self, k: usize) -> f64 {
-        if k == 0 {
-            return self.x0;
+    fn range(&self, range: Range) -> Vec<f64> {
+        let mut result = Vec::new();
+        if range.from == 0 {
+            result.push(self.x0);
         }
-        else if k == 1 {
-            return self.x1;
+        if range.from <= 1 && range.to >= 1 {
+            result.push(self.x1);
         }
-        let mut prev1 = self.x1;
-        let mut prev2 = self.x0;
-        let mut current = 0.0;
-        for _ in 2..=k {
-            current = self.a * prev2 + self.b * prev1;
-            prev2 = prev1;
-            prev1 = current;
+        let mut x_n_minus_2 = self.x0;
+        let mut x_n_minus_1 = self.x1;
+        for k in 2..=range.to {
+            let x_n = self.a * x_n_minus_1 + self.b * x_n_minus_2;
+            if k >= range.from {
+                result.push(x_n);
+            }
+            x_n_minus_2 = x_n_minus_1;
+            x_n_minus_1 = x_n;
+            if k + 1 > range.to {
+                break;
+            }
         }
-        current
+        result
     }
 }
 
